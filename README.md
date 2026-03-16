@@ -1,16 +1,22 @@
 # Automated Secrets Management & Rotation Pipeline
+> [!IMPORTANT]
+> This is a complete secrets management implementation on AWS using Terraform.  
+This project provisions a KMS-encrypted customer handled secret in Secrets Manager, automates credential rotation every 30 days via Lambda, and enforces least-privilege access through scoped IAM policies.
 
-This is a complete secrets management implementation on AWS using Terraform.  
-This project provisions a KMS-encrypted customer handled secret in Secrets Manager, automates credential rotation every 30 days via Lambda, and enforces least-privilege access through scoped IAM policies.  
 *Included in this project are documented anti-patterns, showing common credential mistakes and why they fail.*
 
 ## Architecture
 
-- **KMS** — Customer-managed encryption key with controlled key policy, annual key rotation, and full CloudTrail audit logging. Can be disabled instantly to revoke all access during an incident.
-- **Secrets Manager** — Stores database credentials as an encrypted JSON object. Handles versioning, staging labels (AWSCURRENT / AWSPENDING), and rotation scheduling.
-- **Rotation Lambda** — Implements the four-step rotation protocol (createSecret → setSecret → testSecret → finishSecret). Invoked automatically by Secrets Manager on a 30-day schedule.
-- **Consumer Lambda** — Sample application that retrieves credentials at runtime via the SDK. Caches in memory across warm invocations. Never logs or exposes the actual password.
-- **IAM Policy** — Read-only access scoped to the exact secret ARN and KMS key ARN. Attached to any application role that needs the credentials.
+- **KMS**  
+>Customer-managed encryption key with controlled key policy, annual key rotation, and full CloudTrail audit logging. Can be disabled instantly to revoke all access during an incident.
+- **Secrets Manager**
+>Stores database credentials as an encrypted JSON object. Handles versioning, staging labels (AWSCURRENT / AWSPENDING), and rotation scheduling.
+- **Rotation Lambda**
+> Implements the four-step rotation protocol (createSecret → setSecret → testSecret → finishSecret). Invoked automatically by Secrets Manager on a 30-day schedule.  
+- **Consumer Lambda**
+> Sample application that retrieves credentials at runtime via the SDK. Caches in memory across warm invocations. Never logs or exposes the actual password.
+- **IAM Policy**
+> Read-only access scoped to the exact secret ARN and KMS key ARN. Attached to any application role that needs the credentials.
 
 ## Project Structure
 ```
@@ -33,7 +39,6 @@ This project provisions a KMS-encrypted customer handled secret in Secrets Manag
 
 ## Deploy
 ```bash
-cd 07-secrets-management
 terraform init
 terraform plan
 terraform apply
@@ -51,7 +56,7 @@ Look for `RotationEnabled: true` and `AutomaticallyAfterDays: 30` in the output.
 
 ### 2. Retrieve the secret value
 ```bash
-aws secretsmanager get-secret-value --secret-id prod/database/credentials --profile security-lab --query SecretString --output text | jq
+$ aws secretsmanager get-secret-value --secret-id prod/database/credentials --profile security-lab --query SecretString --output text | jq
 ```
 <img width="1014" height="206" alt="Image" src="https://github.com/user-attachments/assets/e1b22fea-68fa-4af7-90b0-6e1790c9c74f" />
 
@@ -59,9 +64,9 @@ Returns the full credential object: username, password (32 characters), host, po
 
 ### 3. Invoke the consumer Lambda function
 ```bash
-aws lambda invoke --function-name secrets-consumer-app --profile security-lab --payload '{}' response.json
+$ aws lambda invoke --function-name secrets-consumer-app --profile security-lab --payload '{}' response.json
 
-cat response.json | jq
+$ cat response.json | jq
 ```
 <img width="1019" height="141" alt="Image" src="https://github.com/user-attachments/assets/51de8371-4d39-4176-8f6b-84d23d2531a6" />
 
@@ -69,13 +74,13 @@ The response confirms the Lambda successfully retrieved the credentials at runti
 
 ### 4. Capture the current password
 ```bash
-BEFORE=$(aws secretsmanager get-secret-value --secret-id prod/database/credentials --profile security-lab --query SecretString --output text | jq -r .password) && echo "Password before: ${BEFORE:0:8}..."
+$ BEFORE=$(aws secretsmanager get-secret-value --secret-id prod/database/credentials --profile security-lab --query SecretString --output text | jq -r .password) && echo "Password before: ${BEFORE:0:8}..."
 ```
 <img width="874" height="83" alt="Image" src="https://github.com/user-attachments/assets/dc3a103e-b80a-4e50-865d-c358652baa36" />
 
 ### 5. Trigger rotation
 ```bash
-aws secretsmanager rotate-secret --secret-id prod/database/credentials --profile security-lab && echo "Rotation initiated. Waiting 30s..." && sleep 30
+$ aws secretsmanager rotate-secret --secret-id prod/database/credentials --profile security-lab && echo "Rotation initiated. Waiting 30s..." && sleep 30
 ```
 <img width="1015" height="155" alt="Image" src="https://github.com/user-attachments/assets/02c391a8-27e7-46c2-97a0-9a9b4c48b519" />
 
@@ -83,24 +88,31 @@ This manually invokes the rotation Lambda. In normal operation, Secrets Manager 
 
 ### 6. Capture the new password
 ```bash
-AFTER=$(aws secretsmanager get-secret-value --secret-id prod/database/credentials --profile security-lab --query SecretString --output text | jq -r .password) && echo "Password after: ${AFTER:0:8}..."
+$ AFTER=$(aws secretsmanager get-secret-value --secret-id prod/database/credentials --profile security-lab --query SecretString --output text | jq -r .password) && echo "Password after: ${AFTER:0:8}..."
 ```
 <img width="873" height="78" alt="Image" src="https://github.com/user-attachments/assets/890ac539-137a-42c9-953a-d4bf40bc5ba7" />
 
 ### 7. Verify the password changed
 ```bash
-echo $BEFORE
-echo $AFTER
+$ echo $BEFORE
+$ echo $AFTER
 ```
 <img width="689" height="137" alt="Image" src="https://github.com/user-attachments/assets/f4d87200-a031-4bdb-8796-aef30bf06c15" />
 
 ### 8. Check the rotation logs
 ```bash
-aws logs tail /aws/lambda/secrets-rotation-function --since 1h --profile security-lab --format short
+$ aws logs tail /aws/lambda/secrets-rotation-function --since 1h --profile security-lab --format short
 ```
 <img width="773" height="533" alt="Image" src="https://github.com/user-attachments/assets/b70a39ed-a7bb-4cc0-9018-13c810d17045" />
 
-These are **CloudWatch Logs**. Lambda automatically sends its output there — every `logger.info()` call and Lambda lifecycle event gets written to CloudWatch as long as the Lambda's IAM role has `logs:CreateLogGroup`, `logs:CreateLogStream`, and `logs:PutLogEvents` permissions. The rotation Lambda's role includes all three.
+These are **CloudWatch Logs** that Lambda automatically sends its output to.  
+Every `logger.info()` call and Lambda lifecycle event gets written to CloudWatch as long as the Lambda's IAM role has these permissions: 
+- `logs:CreateLogGroup`
+- `logs:CreateLogStream`
+- `logs:PutLogEvents` permissions.  
+***The rotation Lambda's role includes all three.*** 
+
+##
 
 All four rotation steps execute cleanly with *no credentials visible* in the logs:
 ```
@@ -116,15 +128,17 @@ finishSecret: Promoted <version-id> to AWSCURRENT, demoted <old-version>
 
 ### 9. Reinvoke the consumer Lambda
 ```bash
-aws lambda invoke --function-name secrets-consumer-app --profile security-lab --payload '{}' response.json
+$ aws lambda invoke --function-name secrets-consumer-app --profile security-lab --payload '{}' response.json
 
-cat response.json | python3 -m json.tool
+$ cat response.json | python3 -m json.tool
 ```
 <img width="1130" height="238" alt="Image" src="https://github.com/user-attachments/assets/02899dc4-3842-4689-9c2e-998f469df5d5" />
-With the password set as the new one:
+##
+I can confirm visually that the password is set as the new rotated one:
 <img width="1019" height="220" alt="Image" src="https://github.com/user-attachments/assets/72687b28-d1fa-4261-bb6f-0c23f93d29b4" />
 
-The consumer Lambda retrieves the new rotated password without any code changes or redeployment. On its next cold start, it calls `GetSecretValue` and gets the current credential automatically. The `password_length` will still be 32 — same strength, completely different password.
+The consumer Lambda retrieves the new rotated password without any code changes or redeployment.  
+On its next cold start, it calls `GetSecretValue` and gets the current credential automatically. The `password_length` will still be 32 — same strength, completely different password.
 
 ## Anti-Patterns
 
@@ -139,7 +153,12 @@ The `examples/` directory documents three common credential mistakes alongside t
 
 ## Cleanup
 ```bash
-terraform destroy -auto-approve
+$ terraform destroy -auto-approve
 ```
 
 The secret enters a 7-day recovery window before permanent deletion. The KMS key enters a 7-day deletion window as well. Neither incurs charges during the waiting period.
+
+##
+
+> [!CAUTION]
+> ***Mission Accomplished.***
