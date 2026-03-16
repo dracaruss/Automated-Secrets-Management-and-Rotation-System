@@ -1,0 +1,1 @@
+{"statusCode": 200, "body": "{\"message\": \"Successfully retrieved database credentials\", \"username\": \"app_user\", \"host\": \"database.internal.example.com\", \"port\": 5432, \"dbname\": \"appdb\", \"password_length\": 32, \"password_retrieved\": true}"}
