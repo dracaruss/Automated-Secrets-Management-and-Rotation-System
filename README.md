@@ -5,6 +5,12 @@ This project provisions a KMS-encrypted customer handled secret in Secrets Manag
 
 *Included in this project are documented anti-patterns, showing common credential mistakes and why they fail.*
 
+## Automated Secrets Management and Rotation System - High-Level Overview  
+
+### What it does  
+A zero-trust secrets store on AWS that holds sensitive credentials (think database passwords, API keys, service tokens), keeps them encrypted at rest, controls exactly who and what can read them, and automatically rotates them every 30 days without any human touching the credentials.
+The headline outcome: no developer ever sees the password, no password ever lives in code or env files, and even if a credential leaks, it has a ~30-day shelf life before it's invalidated and replaced.
+
 ## Architecture
 
 - **KMS**  
@@ -74,7 +80,7 @@ $ cat response.json | jq
 ```
 <img width="1019" height="141" alt="Image" src="https://github.com/user-attachments/assets/51de8371-4d39-4176-8f6b-84d23d2531a6" />
 
-The response confirms the Lambda successfully retrieved the credentials at runtime. It returns the username, host, port, dbname, and password length — but *never* the actual password. That omission is deliberate.
+The response confirms the Lambda successfully retrieved the credentials at runtime. It returns the username, host, port, dbname, and password length - but *never* the actual password. That omission is deliberate.
 
 ##
 
@@ -131,9 +137,9 @@ All four rotation steps execute cleanly with *no credentials visible* in the log
 Rotation step: createSecret for secret: arn:aws:secretsmanager:...
 createSecret: New password generated and stored as AWSPENDING
 Rotation step: setSecret for secret: arn:aws:secretsmanager:...
-setSecret: STUBBED — would update database password here
+setSecret: STUBBED - would update database password here
 Rotation step: testSecret for secret: arn:aws:secretsmanager:...
-testSecret: STUBBED — would test database connection here
+testSecret: STUBBED - would test database connection here
 Rotation step: finishSecret for secret: arn:aws:secretsmanager:...
 finishSecret: Promoted <version-id> to AWSCURRENT, demoted <old-version>
 ```
@@ -157,7 +163,7 @@ I can confirm visually that the password is set as the new rotated one:
 
 The consumer Lambda function retrieves the new rotated password without any code changes or redeployment.  
 On its next cold start, it calls `GetSecretValue` and gets the current credential automatically.  
-The `password_length` will still be 32 — same strength, completely different password.
+The `password_length` will still be 32 - same strength, completely different password.
 
 ## Anti-Patterns
 
